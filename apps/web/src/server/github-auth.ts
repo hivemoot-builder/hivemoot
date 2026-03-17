@@ -6,9 +6,68 @@
  * - getAuthenticatedUser: fetches the authenticated GitHub user's identity
  * - getInstallation: fetches installation metadata using the App JWT
  * - checkOrgAdmin: verifies the user holds an "admin" role in the target org
+ *
+ * OAuth initiation helpers (shared by start and start-discover routes):
+ * - GITHUB_AUTHORIZE_URL, GITHUB_OAUTH_SCOPE, OAUTH_STATE_COOKIE_MAX_AGE
+ * - isSafeNextPath: validates that a `next` redirect param is a safe same-origin path
+ * - buildGitHubAuthorizeUrl: constructs the GitHub OAuth authorization URL
+ * - getOAuthStateCookieOptions: returns the stable options for the state-binding cookie
  */
 
 import { createSign } from "crypto";
+
+// ---------------------------------------------------------------------------
+// OAuth initiation constants and helpers
+// ---------------------------------------------------------------------------
+
+export const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
+export const GITHUB_OAUTH_SCOPE = "read:org";
+/** 10 minutes — aligned with the Redis OAuth state TTL */
+export const OAUTH_STATE_COOKIE_MAX_AGE = 600;
+
+/**
+ * Returns true if `next` is a safe same-origin path.
+ * Blocks protocol-relative URLs (//evil.com), backslash-relative URLs (/\evil.com),
+ * and absolute URLs.
+ */
+export function isSafeNextPath(next: string): boolean {
+  return next.startsWith("/") && !next.startsWith("//") && !next.includes("\\");
+}
+
+/**
+ * Constructs the GitHub OAuth authorization URL with the standard parameters.
+ */
+export function buildGitHubAuthorizeUrl(
+  clientId: string,
+  callbackUrl: string,
+  state: string,
+): string {
+  const authorizeUrl = new URL(GITHUB_AUTHORIZE_URL);
+  authorizeUrl.searchParams.set("client_id", clientId);
+  authorizeUrl.searchParams.set("redirect_uri", callbackUrl);
+  authorizeUrl.searchParams.set("state", state);
+  authorizeUrl.searchParams.set("scope", GITHUB_OAUTH_SCOPE);
+  return authorizeUrl.toString();
+}
+
+/**
+ * Returns the stable cookie options for the OAuth state-binding cookie.
+ */
+export function getOAuthStateCookieOptions(): {
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite: "lax";
+  maxAge: number;
+  path: string;
+} {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: OAUTH_STATE_COOKIE_MAX_AGE,
+    path: "/",
+  };
+}
 
 // ---------------------------------------------------------------------------
 // App JWT
